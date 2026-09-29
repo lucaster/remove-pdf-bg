@@ -11,7 +11,6 @@ Esempi:
   python remove_pdf_backgrounds.py input.pdf -o pulito.pdf
   python remove_pdf_backgrounds.py input.pdf -e 1,3,10-12       # escludi pagine
   python remove_pdf_backgrounds.py input.pdf -t 90 --dry-run    # solo report
-  python remove_pdf_backgrounds.py test.pdf -o pulito.pdf -e 1 -t 90 --dry-run
 """
 
 import argparse
@@ -66,97 +65,127 @@ def coverage(bbox, page_rect) -> float:
     return inter.get_area() / page_rect.get_area()
 
 
-def strip_image_from_page(page, xref) -> bool:
-    """Toglie l'immagine SOLO da questa pagina, eliminando dalla content stream
-    l'operatore che la disegna. Serve quando l'immagine è condivisa con pagine
-    escluse: delete_image() agirebbe su tutte le pagine."""
+def strip_images_from_page(page, targets: set[int]) -> tuple[set[int], set[int]]:
+    """Toglie le immagini `targets` (xref) SOLO da questa pagina, eliminando
+    dalla content stream l'operatore che le disegna. Non modifica né cancella
+    gli oggetti immagine, quindi non può rompere altre pagine né la struttura
+    del file. Restituisce (xref rimossi, xref non gestiti)."""
     doc = page.parent
-    name = None
+
+    # 1) normalizza la content stream (una sola stream, nomi risorse coerenti)
+    page.clean_contents()
+
+    # 2) associa xref -> nome della risorsa nella pagina
+    names: dict[int, set[str]] = {}
+    unhandled: set[int] = set()
     for img in page.get_images(full=True):
         # (xref, smask, w, h, bpc, cs, alt_cs, name, filter, referencer)
-        if img[0] == xref and (len(img) < 10 or img[9] == 0):
-            name = img[7]
-            break
-    if not name:
-        return False  # immagine dentro un Form XObject: non gestita
+        xref = img[0]
+        if xref not in targets:
+            continue
+        referencer = img[9] if len(img) > 9 else 0
+        if referencer == 0:
+            names.setdefault(xref, set()).add(img[7])
+        else:
+            unhandled.add(xref)  # dentro un Form XObject
 
-    page.clean_contents()
-    pattern = rb"(?<![\w/])/" + re.escape(name.encode()) + rb"\s+Do\b"
-    changed = False
+    # 3) rimuove "/Nome Do" dalla content stream
+    removed: set[int] = set()
     for cx in page.get_contents():
         data = doc.xref_stream(cx)
-        new = re.sub(pattern, b"", data)
+        new = data
+        for xref, nn in names.items():
+            for name in nn:
+                pattern = rb"(?<![\w/])/" + re.escape(name.encode()) + rb"\s+Do\b"
+                new, count = re.subn(pattern, b"", new)
+                if count:
+                    removed.add(xref)
         if new != data:
             doc.update_stream(cx, new)
-            changed = True
-    return changed
+
+    # 4) una seconda pulizia elimina dalle risorse le immagini non più usate
+    if removed:
+        page.clean_contents()
+
+    unhandled |= set(names) - removed
+    return removed, unhandled - removed
 
 
 def remove_backgrounds(src, dst, threshold, excluded, dry_run=False):
     doc = fitz.open(src)
     n_pages = len(doc)
 
-    # Immagini usate nelle pagine escluse: l'oggetto immagine è unico nel file,
-    # quindi se è condiviso con una pagina esclusa non possiamo cancellarlo
-    # globalmente e lo togliamo pagina per pagina dalla content stream.
-    protected: set[int] = set()
-    for i in excluded:
-        protected.update(img[0] for img in doc[i].get_images(full=True))
-
-    already_replaced: set[int] = set()
     total_removed = 0
     pages_touched = 0
+    problems = 0
+    usage: dict[int, int] = {}  # xref -> numero di pagine
 
     for i, page in enumerate(doc):
         if i in excluded:
             print(f"Pagina {i + 1:>4}: esclusa")
             continue
 
-        prect = visible_rect_size(page)
-        seen_on_page: set[int] = set()
-        removed_here = 0
+        try:
+            prect = visible_rect_size(page)
+            targets: dict[int, float] = {}
+            for info in page.get_image_info(xrefs=True):
+                xref = info.get("xref", 0)
+                if xref == 0 or xref in targets:  # 0 = immagine inline
+                    continue
+                cov = coverage(info["bbox"], prect)
+                if cov >= threshold:
+                    targets[xref] = cov
 
-        for info in page.get_image_info(xrefs=True):
-            xref = info.get("xref", 0)
-            if xref == 0 or xref in seen_on_page:  # 0 = immagine inline
+            if not targets:
                 continue
-            seen_on_page.add(xref)
 
-            cov = coverage(info["bbox"], prect)
-            if cov < threshold:
-                continue
+            if dry_run:
+                removed, unhandled = set(targets), set()
+            else:
+                removed, unhandled = strip_images_from_page(page, set(targets))
+        except Exception as e:  # una pagina problematica non blocca le altre
+            problems += 1
+            print(f"Pagina {i + 1:>4}: ERRORE ({e}) -> pagina lasciata invariata")
+            continue
 
-            if not dry_run:
-                if xref in protected:
-                    if not strip_image_from_page(page, xref):
-                        print(
-                            f"Pagina {i + 1:>4}: sfondo (xref {xref}) non rimovibile "
-                            f"(dentro un Form XObject) -> saltato"
-                        )
-                        continue
-                elif xref not in already_replaced:
-                    page.delete_image(xref)
-                    already_replaced.add(xref)
-            removed_here += 1
+        for xref in sorted(removed):
             print(
                 f"Pagina {i + 1:>4}: {'trovato' if dry_run else 'rimosso'} sfondo "
-                f"(xref {xref}, copertura {cov:.0%})"
+                f"(xref {xref}, copertura {targets[xref]:.0%})"
             )
-
-        if removed_here:
+        for xref in sorted(unhandled):
+            problems += 1
+            print(
+                f"Pagina {i + 1:>4}: sfondo (xref {xref}, copertura {targets[xref]:.0%}) "
+                f"non rimovibile (dentro un Form XObject) -> saltato"
+            )
+        if removed:
             pages_touched += 1
-            total_removed += removed_here
+            total_removed += len(removed)
+            for xref in removed:
+                usage[xref] = usage.get(xref, 0) + 1
 
     if not dry_run:
-        # garbage=4 elimina gli oggetti non più referenziati (i dati
-        # originali delle immagini), deflate ricomprime gli stream.
-        doc.save(dst, garbage=4, deflate=True)
+        # garbage=3 elimina gli oggetti non più referenziati (i dati delle
+        # immagini rimosse) senza il deduplicate aggressivo di garbage=4.
+        doc.save(dst, garbage=3, deflate=True)
     doc.close()
 
+    verb = "individuate" if dry_run else "rimosse"
     print(
-        f"\nImmagini {'individuate' if dry_run else 'rimosse'}: {total_removed} "
+        f"\nOccorrenze {verb} (immagine x pagina): {total_removed} "
         f"su {pages_touched} pagine (totale pagine: {n_pages})"
     )
+    print(f"Immagini distinte: {len(usage)}")
+    ranked = sorted(usage.items(), key=lambda kv: (-kv[1], kv[0]))
+    for xref, n in ranked[:15]:
+        print(f"  xref {xref:>6}: {n} {'pagina' if n == 1 else 'pagine'}")
+    if len(ranked) > 15:
+        rest = ranked[15:]
+        print(f"  ... e altre {len(rest)} immagini distinte "
+              f"(usate in {sum(n for _, n in rest)} pagine in totale)")
+    if problems:
+        print(f"Attenzione: {problems} problemi segnalati sopra.")
     if not dry_run:
         print(f"File salvato in: {dst}")
 
