@@ -148,9 +148,12 @@ def remove_backgrounds(src, dst, threshold, excluded, dry_run=False):
             total_removed += removed_here
 
     if not dry_run:
-        # garbage=4 elimina gli oggetti non più referenziati (i dati
-        # originali delle immagini), deflate ricomprime gli stream.
-        doc.save(dst, garbage=4, deflate=True)
+        # garbage=2 elimina gli oggetti non più referenziati (i dati
+        # originali delle immagini) restando veloce; i livelli 3-4 unirebbero
+        # anche i duplicati ma su file grandi richiedono minuti. deflate
+        # ricomprime gli stream.
+        print("\nSalvataggio in corso...", flush=True)
+        doc.save(dst, garbage=2, deflate=True)
     doc.close()
 
     print(
