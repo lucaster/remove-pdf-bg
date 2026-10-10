@@ -148,12 +148,14 @@ def remove_backgrounds(src, dst, threshold, excluded, dry_run=False):
             total_removed += removed_here
 
     if not dry_run:
-        # garbage=2 elimina gli oggetti non più referenziati (i dati
-        # originali delle immagini) restando veloce; i livelli 3-4 unirebbero
-        # anche i duplicati ma su file grandi richiedono minuti. deflate
-        # ricomprime gli stream.
+        # garbage=4 elimina gli oggetti non più referenziati (i dati originali
+        # delle immagini), compatta la xref e unisce oggetti/stream duplicati:
+        # su file grandi può richiedere qualche minuto. deflate ricomprime gli
+        # stream non compressi; use_objstms ricrea gli object stream (/ObjStm),
+        # altrimenti MuPDF li riscrive sciolti e il file può crescere rispetto
+        # all'originale. Non combinabile con linear=True.
         print("\nSalvataggio in corso...", flush=True)
-        doc.save(dst, garbage=2, deflate=True)
+        doc.save(dst, garbage=4, deflate=True, use_objstms=True)
     doc.close()
 
     print(
