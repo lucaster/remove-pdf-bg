@@ -14,6 +14,8 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.common.PDStream;
+import org.apache.pdfbox.pdmodel.graphics.PDXObject;
+import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.pdfwriter.compress.CompressParameters;
 import org.apache.pdfbox.util.Matrix;
@@ -22,12 +24,14 @@ import java.awt.geom.Point2D;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -59,14 +63,19 @@ public final class RemovePdfBg {
     private record Placement(double x0, double y0, double x1, double y1) {
     }
 
+    /** Immagine trovata su una pagina, con la prima posizione in cui è disegnata. */
+    private record FoundImage(PDImageXObject image, Placement placement) {
+    }
+
     /**
-     * Scanner dei content stream: registra i piazzamenti di ogni immagine
-     * disegnata con l'operatore "Do" (le immagini inline vengono ignorate,
-     * come nello script Python con xref == 0).
+     * Scanner dei content stream: registra il primo piazzamento di ogni immagine
+     * disegnata con l'operatore "Do" (le immagini inline vengono ignorate, come
+     * nello script Python con xref == 0). Scende ricorsivamente nei Form XObject,
+     * perché gli sfondi di pagina sono spesso lì dentro.
      */
     private static final class ImageScanner extends PDFStreamEngine {
 
-        private final Map<COSName, List<Placement>> placements = new HashMap<>();
+        private final Map<Long, FoundImage> placements = new LinkedHashMap<>();
 
         ImageScanner() {
             // Di default PDFStreamEngine non registra alcun operatore: senza q/Q/cm
@@ -80,49 +89,32 @@ public final class RemovePdfBg {
         protected void processOperator(Operator operator, List<COSBase> operands) throws IOException {
             if ("Do".equals(operator.getName()) && !operands.isEmpty()
                     && operands.get(0) instanceof COSName name) {
-                if (getResources().getXObject(name) instanceof PDImageXObject) {
+                PDXObject xobject;
+                try {
+                    xobject = getResources().getXObject(name);
+                } catch (IOException e) {
+                    xobject = null;
+                }
+                if (xobject instanceof PDImageXObject image) {
+                    long xref = xrefOf(image.getCOSObject());
                     Matrix ctm = getGraphicsState().getCurrentTransformationMatrix();
-                    placements.computeIfAbsent(name, k -> new ArrayList<>())
-                            .add(bboxOfUnitSquare(ctm));
+                    placements.putIfAbsent(xref, new FoundImage(image, bboxOfUnitSquare(ctm)));
+                    return;
+                }
+                if (xobject instanceof PDFormXObject form) {
+                    increaseLevel();
+                    try {
+                        if (getLevel() > 50) {
+                            return;
+                        }
+                        showForm(form);
+                    } finally {
+                        decreaseLevel();
+                    }
                     return;
                 }
             }
             super.processOperator(operator, operands);
-        }
-    }
-
-    /** Dizionario /XObject di una pagina, con snapshot dei nomi per poter
-     *  rimuovere voci durante l'iterazione. */
-    private static final class PageXObjects {
-
-        private final PDResources resources;
-        private final COSDictionary dict;
-        private final List<COSName> names;
-
-        private PageXObjects(PDResources resources, COSDictionary dict) {
-            this.resources = resources;
-            this.dict = dict;
-            this.names = List.copyOf(dict.keySet());
-        }
-
-        static PageXObjects of(PDPage page) {
-            PDResources res = page.getResources();
-            if (res == null) {
-                return null;
-            }
-            COSBase xo = res.getCOSObject().getDictionaryObject(COSName.XOBJECT);
-            if (!(xo instanceof COSDictionary dict)) {
-                return null;
-            }
-            return new PageXObjects(res, dict);
-        }
-
-        boolean isImage(COSName name) {
-            return dict.getDictionaryObject(name) instanceof COSStream && resources.isImageXObject(name);
-        }
-
-        long xref(COSName name) {
-            return xrefOf(dict.getDictionaryObject(name));
         }
     }
 
@@ -217,22 +209,82 @@ public final class RemovePdfBg {
         return true;
     }
 
-    /** Cancellazione globale: rimuove l'immagine da tutte le pagine che la referenziano
-     *  come risorsa diretta. Al salvataggio gli oggetti non più referenziati vengono scartati. */
-    private static void deleteImageFromDocument(PDDocument doc, long xref) throws IOException {
-        for (int i = 0; i < doc.getNumberOfPages(); i++) {
-            PDPage page = doc.getPage(i);
-            PageXObjects xo = PageXObjects.of(page);
-            if (xo == null) {
-                continue;
-            }
-            for (COSName name : xo.names) {
-                if (xo.isImage(name) && xo.xref(name) == xref) {
-                    stripImageFromPage(doc, page, name.getName());
-                    xo.dict.removeItem(name);
+    /** Sostituisce l'oggetto immagine, ovunque sia referenziato, con un'immagine
+     *  1x1 completamente trasparente (mascherata da un /SMask tutto a zero). È
+     *  l'equivalente di Page.delete_image() di PyMuPDF: agisce sull'oggetto unico
+     *  nel file, quindi funziona anche quando l'immagine è disegnata dentro un
+     *  Form XObject condiviso. */
+    private static void replaceImageWithTransparent(PDDocument doc, COSStream stream) throws IOException {
+        COSStream mask = doc.getDocument().createCOSStream();
+        mask.setItem(COSName.TYPE, COSName.XOBJECT);
+        mask.setItem(COSName.SUBTYPE, COSName.IMAGE);
+        mask.setInt(COSName.WIDTH, 1);
+        mask.setInt(COSName.HEIGHT, 1);
+        mask.setItem(COSName.COLORSPACE, COSName.DEVICEGRAY);
+        mask.setInt(COSName.BITS_PER_COMPONENT, 8);
+        try (OutputStream out = mask.createOutputStream(COSName.FLATE_DECODE)) {
+            out.write(0);
+        }
+
+        for (COSName key : new ArrayList<>(stream.keySet())) {
+            stream.removeItem(key);
+        }
+        stream.setItem(COSName.TYPE, COSName.XOBJECT);
+        stream.setItem(COSName.SUBTYPE, COSName.IMAGE);
+        stream.setInt(COSName.WIDTH, 1);
+        stream.setInt(COSName.HEIGHT, 1);
+        stream.setItem(COSName.COLORSPACE, COSName.DEVICEGRAY);
+        stream.setInt(COSName.BITS_PER_COMPONENT, 8);
+        stream.setItem(COSName.SMASK, mask);
+        try (OutputStream out = stream.createOutputStream(COSName.FLATE_DECODE)) {
+            out.write(0);
+        }
+    }
+
+    /** Tutte le immagini referenziate (anche dentro i Form XObject) dalle risorse. */
+    private static void collectImageXrefs(PDResources resources, Set<Long> out, int depth)
+            throws IOException {
+        if (resources == null || depth > 50) {
+            return;
+        }
+        COSBase xo = resources.getCOSObject().getDictionaryObject(COSName.XOBJECT);
+        if (!(xo instanceof COSDictionary dict)) {
+            return;
+        }
+        for (COSName name : dict.keySet()) {
+            if (resources.isImageXObject(name)) {
+                out.add(xrefOf(dict.getDictionaryObject(name)));
+            } else {
+                PDXObject xobject;
+                try {
+                    xobject = resources.getXObject(name);
+                } catch (IOException e) {
+                    continue;
+                }
+                if (xobject instanceof PDFormXObject form) {
+                    collectImageXrefs(form.getResources(), out, depth + 1);
                 }
             }
         }
+    }
+
+    /** Nomi delle immagini nel solo dizionario /XObject di primo livello della
+     *  pagina: sono quelli che possono comparire nella content stream della pagina. */
+    private static Map<Long, String> pageLevelImageNames(PDResources resources) {
+        Map<Long, String> map = new HashMap<>();
+        if (resources == null) {
+            return map;
+        }
+        COSBase xo = resources.getCOSObject().getDictionaryObject(COSName.XOBJECT);
+        if (!(xo instanceof COSDictionary dict)) {
+            return map;
+        }
+        for (COSName name : dict.keySet()) {
+            if (resources.isImageXObject(name)) {
+                map.putIfAbsent(xrefOf(dict.getDictionaryObject(name)), name.getName());
+            }
+        }
+        return map;
     }
 
     private static void removeBackgrounds(Path src, Path dst, double threshold,
@@ -241,19 +293,11 @@ public final class RemovePdfBg {
             int nPages = doc.getNumberOfPages();
 
             // Immagini usate nelle pagine escluse: l'oggetto immagine è unico nel file,
-            // quindi se è condiviso con una pagina esclusa non possiamo cancellarlo
+            // quindi se è condiviso con una pagina esclusa non possiamo sostituirlo
             // globalmente e lo togliamo pagina per pagina dalla content stream.
             Set<Long> protectedXrefs = new HashSet<>();
             for (int i : excluded) {
-                PageXObjects xo = PageXObjects.of(doc.getPage(i));
-                if (xo == null) {
-                    continue;
-                }
-                for (COSName name : xo.names) {
-                    if (xo.isImage(name)) {
-                        protectedXrefs.add(xo.xref(name));
-                    }
-                }
+                collectImageXrefs(doc.getPage(i).getResources(), protectedXrefs, 0);
             }
 
             Set<Long> alreadyReplaced = new HashSet<>();
@@ -271,47 +315,34 @@ public final class RemovePdfBg {
                 ImageScanner scanner = new ImageScanner();
                 scanner.processPage(page);
 
-                PageXObjects xo = PageXObjects.of(page);
-                Set<Long> seenOnPage = new HashSet<>();
+                Map<Long, String> pageNames = pageLevelImageNames(page.getResources());
                 int removedHere = 0;
 
-                if (xo != null) {
-                    for (COSName name : xo.names) {
-                        if (!xo.isImage(name)) {
-                            continue;
-                        }
-                        long xref = xo.xref(name);
-                        if (!seenOnPage.add(xref)) {
-                            continue;
-                        }
-                        List<Placement> list = scanner.placements.get(name);
-                        if (list == null) {
-                            continue; // immagine dentro un Form XObject: non gestita
-                        }
-                        for (Placement bbox : list) {
-                            double cov = coverage(bbox, pageRect);
-                            if (cov < threshold) {
+                for (Map.Entry<Long, FoundImage> entry : scanner.placements.entrySet()) {
+                    long xref = entry.getKey();
+                    double cov = coverage(entry.getValue().placement(), pageRect);
+                    if (cov < threshold) {
+                        continue;
+                    }
+                    if (!dryRun) {
+                        if (protectedXrefs.contains(xref)) {
+                            String name = pageNames.get(xref);
+                            if (name == null || !stripImageFromPage(doc, page, name)) {
+                                System.out.printf(
+                                        "Pagina %4d: sfondo (xref %d) non rimovibile "
+                                                + "(dentro un Form XObject) -> saltato%n",
+                                        i + 1, xref);
                                 continue;
                             }
-                            if (!dryRun) {
-                                if (protectedXrefs.contains(xref)) {
-                                    if (!stripImageFromPage(doc, page, name.getName())) {
-                                        System.out.printf(
-                                                "Pagina %4d: sfondo (xref %d) non rimovibile "
-                                                        + "(dentro un Form XObject) -> saltato%n",
-                                                i + 1, xref);
-                                        continue;
-                                    }
-                                } else if (!alreadyReplaced.contains(xref)) {
-                                    deleteImageFromDocument(doc, xref);
-                                    alreadyReplaced.add(xref);
-                                }
-                            }
-                            removedHere++;
-                            System.out.printf("Pagina %4d: %s sfondo (xref %d, copertura %.0f%%)%n",
-                                    i + 1, dryRun ? "trovato" : "rimosso", xref, cov * 100);
+                        } else if (!alreadyReplaced.contains(xref)) {
+                            replaceImageWithTransparent(doc,
+                                    (COSStream) entry.getValue().image().getCOSObject());
+                            alreadyReplaced.add(xref);
                         }
                     }
+                    removedHere++;
+                    System.out.printf("Pagina %4d: %s sfondo (xref %d, copertura %.0f%%)%n",
+                            i + 1, dryRun ? "trovato" : "rimosso", xref, cov * 100);
                 }
 
                 if (removedHere > 0) {
