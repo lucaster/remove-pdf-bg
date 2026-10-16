@@ -14,6 +14,7 @@ Uso tipico:
     python tests/compare.py "Loot & Lore PDF v1.pdf" --dpi 30 --max-pages 40
     python tests/compare.py test.pdf -e 2 -t 50 --dry-run
     python tests/compare.py test.pdf --keep          # conserva i PDF generati
+    python tests/compare.py test.pdf --exe target/dist/remove-pdf-bg/remove-pdf-bg.exe
 
 Prerequisiti:
     - il jar Java compilato in target/remove-pdf-bg.jar  (mvn package)
@@ -152,7 +153,7 @@ def test_pdf(pdf: Path, args: argparse.Namespace, tmp: Path) -> bool:
     if args.exclude:
         common += ["-e", args.exclude]
     if args.dry_run:
-        common += ["-n"]
+        common += ["-d"]
 
     py_out = out_py if not args.dry_run else None
     java_out = out_java if not args.dry_run else None
@@ -162,7 +163,10 @@ def test_pdf(pdf: Path, args: argparse.Namespace, tmp: Path) -> bool:
         py_cmd += ["-o", str(py_out)]
     py_cmd += common
 
-    java_cmd = ["java", "-jar", str(JAR), str(pdf)]
+    if args.exe:
+        java_cmd = [str(args.exe), str(pdf)]
+    else:
+        java_cmd = ["java", "-jar", str(JAR), str(pdf)]
     if java_out:
         java_cmd += ["-o", str(java_out)]
     java_cmd += common
@@ -236,17 +240,23 @@ def main() -> int:
                     help="numero massimo di pagine campionate per PDF (0 = tutte)")
     ap.add_argument("-t", "--threshold", type=float, default=None)
     ap.add_argument("-e", "--exclude", default="")
-    ap.add_argument("-n", "--dry-run", action="store_true",
+    ap.add_argument("-d", "--dry-run", action="store_true",
                     help="confronta solo l'output testuale (nessun PDF scritto)")
     ap.add_argument("--strict-stdout", action="store_true",
                     help="nella rimozione reale considera un FAIL ogni differenza di testo")
     ap.add_argument("--keep", action="store_true", help="conserva i PDF generati")
     ap.add_argument("--jar", type=Path, default=JAR)
+    ap.add_argument("--exe", type=Path, default=None,
+                    help="usa questo eseguibile (jpackage app-image) invece di java -jar")
     args = ap.parse_args()
 
     if args.jar != JAR:
         JAR = args.jar
-    if not JAR.is_file():
+    if args.exe:
+        if not args.exe.is_file():
+            sys.exit(f"Eseguibile non trovato: {args.exe}\n"
+                     f"Compila prima con: mvn package -Pexe")
+    elif not JAR.is_file():
         sys.exit(f"Jar non trovato: {JAR}\nCompila prima con: mvn package")
     if not PY_TOOL.is_file():
         sys.exit(f"Script Python non trovato: {PY_TOOL}")

@@ -51,4 +51,108 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!-- Build dell'eseguibile Windows autocontentuto (app-image portatile):
+         mvn package -Pexe   ->  target/dist/remove-pdf-bg/remove-pdf-bg.exe
+         La cartella contiene anche runtime/ con la JVM ridotta generata da
+         jlink: non serve Java installato sul PC di destinazione. -->
+    <profile>
+      <id>exe</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>clean-jpackage-output</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <delete dir="${project.build.directory}/dist" quiet="true"/>
+                    <delete dir="${project.build.directory}/jpackage-input" quiet="true"/>
+                  </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>stage-jar-for-jpackage</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/jpackage-input</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>${project.build.directory}</directory>
+                      <includes>
+                        <include>remove-pdf-bg.jar</include>
+                      </includes>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.5.0</version>
+            <executions>
+              <execution>
+                <id>jpackage-app-image</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${java.home}/bin/jpackage.exe</executable>
+                  <arguments>
+                    <argument>--type</argument>
+                    <argument>app-image</argument>
+                    <argument>--name</argument>
+                    <argument>remove-pdf-bg</argument>
+                    <argument>--app-version</argument>
+                    <argument>${project.version}</argument>
+                    <argument>--vendor</argument>
+                    <argument>${project.groupId}</argument>
+                    <argument>--description</argument>
+                    <argument>${project.name}</argument>
+                    <argument>--input</argument>
+                    <argument>${project.build.directory}/jpackage-input</argument>
+                    <argument>--main-jar</argument>
+                    <argument>remove-pdf-bg.jar</argument>
+                    <argument>--main-class</argument>
+                    <argument>RemovePdfBg</argument>
+                    <argument>--add-modules</argument>
+                    <!-- jdk.unsupported serve a PDFBox (sun.misc.Unsafe) per
+                         l'unmapping dei buffer: senza genera un errore SEVERE
+                         ad ogni avvio -->
+                    <argument>java.base,java.desktop,java.logging,jdk.unsupported</argument>
+                    <argument>--dest</argument>
+                    <argument>${project.build.directory}/dist</argument>
+                    <!-- CLI: senza questo il launcher Windows non apre la
+                         finestra di console e l'output non si vede -->
+                    <argument>--win-console</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

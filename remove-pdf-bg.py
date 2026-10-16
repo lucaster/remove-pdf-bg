@@ -181,7 +181,7 @@ def main():
         help="pagine da NON trattare, numerate da 1: es. '1,3,10-12' o '5-'",
     )
     ap.add_argument(
-        "-n", "--dry-run", action="store_true",
+        "-d", "--dry-run", action="store_true",
         help="mostra cosa verrebbe rimosso senza scrivere alcun file",
     )
     args = ap.parse_args()

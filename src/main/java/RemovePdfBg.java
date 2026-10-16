@@ -379,7 +379,7 @@ public final class RemovePdfBg {
                   -o, --output FILE     PDF di output (default: <input>_nobg.pdf)
                   -t, --threshold N     copertura minima della pagina, in % (default: 95)
                   -e, --exclude SPEC    pagine da NON trattare, numerate da 1: es. '1,3,10-12' o '5-'
-                  -n, --dry-run         mostra cosa verrebbe rimosso senza scrivere alcun file
+                  -d, --dry-run         mostra cosa verrebbe rimosso senza scrivere alcun file
                   -h, --help            mostra questo messaggio""");
     }
 
@@ -423,7 +423,7 @@ public final class RemovePdfBg {
                     }
                     exclude = args[i];
                 }
-                case "-n", "--dry-run" -> dryRun = true;
+                case "-d", "--dry-run" -> dryRun = true;
                 default -> {
                     if (args[i].startsWith("-")) {
                         System.err.println("Opzione sconosciuta: " + args[i]);
