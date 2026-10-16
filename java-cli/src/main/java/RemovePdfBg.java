@@ -43,16 +43,16 @@ import java.util.regex.Pattern;
  * che coprono almeno una certa percentuale dell'area della pagina (default 95%).
  * Testo e grafica vettoriale restano intatti.
  *
- * Equivalente Java di remove-pdf-bg.py, basato su Apache PDFBox.
+ * Equivalente Java di python-cli/remove-pdf-bg.py, basato su Apache PDFBox.
  *
- * Compilazione:  mvn package
+ * Compilazione:  mvn package            (dalla cartella java-cli/)
  * Esecuzione:    java -jar target/remove-pdf-bg.jar input.pdf
  *
  * Esempi:
- *   java -jar remove-pdf-bg.jar input.pdf
- *   java -jar remove-pdf-bg.jar input.pdf -o pulito.pdf
- *   java -jar remove-pdf-bg.jar input.pdf -e 1,3,10-12       # escludi pagine
- *   java -jar remove-pdf-bg.jar input.pdf -t 90 --dry-run    # solo report
+ *   java -jar target/remove-pdf-bg.jar input.pdf
+ *   java -jar target/remove-pdf-bg.jar input.pdf -o pulito.pdf
+ *   java -jar target/remove-pdf-bg.jar input.pdf -e 1,3,10-12    # escludi pagine
+ *   java -jar target/remove-pdf-bg.jar input.pdf -t 90 -d        # solo report
  */
 public final class RemovePdfBg {
 

@@ -1,21 +1,33 @@
 # remove-pdf-bg
 Remove background from PDF files to make them REALLY printer-friendly!
 
-## Build
+## Python CLI
 
-Richiede un JDK 17+ (necessario anche per `jpackage`).
+Implementazione originale in `python-cli/remove-pdf-bg.py` (richiede
+`pip install pymupdf`):
 
 ```bash
-mvn package                 # -> target/remove-pdf-bg.jar (autoconsistente)
-mvn package -Pexe           # -> target/dist/remove-pdf-bg/  (vedi sotto)
+python python-cli/remove-pdf-bg.py input.pdf -o pulito.pdf
+python python-cli/remove-pdf-bg.py input.pdf -d            # dry-run
+python python-cli/remove-pdf-bg.py input.pdf -e 1,3 -t 90  # esclusioni/soglia
+```
+
+## Java CLI
+
+Il progetto Maven è in `java-cli/`. Richiede un JDK 17+ (necessario anche per
+`jpackage`).
+
+```bash
+mvn -f java-cli/pom.xml package        # -> java-cli/target/remove-pdf-bg.jar
+mvn -f java-cli/pom.xml package -Pexe  # -> java-cli/target/dist/remove-pdf-bg/
 ```
 
 Esecuzione da jar:
 
 ```bash
-java -jar target/remove-pdf-bg.jar input.pdf -o pulito.pdf
-java -jar target/remove-pdf-bg.jar input.pdf -d            # dry-run
-java -jar target/remove-pdf-bg.jar input.pdf -e 1,3 -t 90  # esclusioni/soglia
+java -jar java-cli/target/remove-pdf-bg.jar input.pdf -o pulito.pdf
+java -jar java-cli/target/remove-pdf-bg.jar input.pdf -d            # dry-run
+java -jar java-cli/target/remove-pdf-bg.jar input.pdf -e 1,3 -t 90  # esclusioni/soglia
 ```
 
 ## Eseguibile Windows autocontentuto (`-Pexe`)
@@ -23,7 +35,7 @@ java -jar target/remove-pdf-bg.jar input.pdf -e 1,3 -t 90  # esclusioni/soglia
 Genera un'app-image portatile con `jpackage`:
 
 ```
-target/dist/remove-pdf-bg/
+java-cli/target/dist/remove-pdf-bg/
   remove-pdf-bg.exe   # launcher (finestra di console)
   app/                # il jar
   runtime/            # JRE ridotto (jlink: java.base, java.desktop,
@@ -46,7 +58,7 @@ rendering pixel-per-pixel:
 ```bash
 python tests/compare.py test.pdf
 python tests/compare.py test.pdf --dry-run --strict-stdout
-python tests/compare.py test.pdf --exe target/dist/remove-pdf-bg/remove-pdf-bg.exe
+python tests/compare.py test.pdf --exe java-cli/target/dist/remove-pdf-bg/remove-pdf-bg.exe
 ```
 
 Requisiti Python: `pip install pymupdf` (numpy opzionale).

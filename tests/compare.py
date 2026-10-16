@@ -14,10 +14,11 @@ Uso tipico:
     python tests/compare.py "Loot & Lore PDF v1.pdf" --dpi 30 --max-pages 40
     python tests/compare.py test.pdf -e 2 -t 50 --dry-run
     python tests/compare.py test.pdf --keep          # conserva i PDF generati
-    python tests/compare.py test.pdf --exe target/dist/remove-pdf-bg/remove-pdf-bg.exe
+    python tests/compare.py test.pdf --exe java-cli/target/dist/remove-pdf-bg/remove-pdf-bg.exe
 
 Prerequisiti:
-    - il jar Java compilato in target/remove-pdf-bg.jar  (mvn package)
+    - il jar Java compilato in java-cli/target/remove-pdf-bg.jar
+      (mvn -f java-cli/pom.xml package)
     - pymupdf  (pip install pymupdf)
     - numpy opzionale: se presente il report è più dettagliato.
 
@@ -48,8 +49,8 @@ except ImportError:
     np = None
 
 REPO = Path(__file__).resolve().parent.parent
-PY_TOOL = REPO / "remove-pdf-bg.py"
-JAR = REPO / "target" / "remove-pdf-bg.jar"
+PY_TOOL = REPO / "python-cli" / "remove-pdf-bg.py"
+JAR = REPO / "java-cli" / "target" / "remove-pdf-bg.jar"
 
 
 SUMMARY_PREFIXES = ("Immagini rimosse:", "Immagini individuate:")
@@ -255,9 +256,9 @@ def main() -> int:
     if args.exe:
         if not args.exe.is_file():
             sys.exit(f"Eseguibile non trovato: {args.exe}\n"
-                     f"Compila prima con: mvn package -Pexe")
+                     f"Compila prima con: mvn -f java-cli/pom.xml package -Pexe")
     elif not JAR.is_file():
-        sys.exit(f"Jar non trovato: {JAR}\nCompila prima con: mvn package")
+        sys.exit(f"Jar non trovato: {JAR}\nCompila prima con: mvn -f java-cli/pom.xml package")
     if not PY_TOOL.is_file():
         sys.exit(f"Script Python non trovato: {PY_TOOL}")
 
