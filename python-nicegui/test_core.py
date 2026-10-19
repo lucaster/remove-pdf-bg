@@ -7,6 +7,7 @@ import pytest
 from gui import (
     AnalysisResult,
     CandidateImage,
+    _fmt_eta,
     analyze_pdf,
     apply_removal,
     can_strip_image_from_page,
@@ -160,8 +161,24 @@ class TestAnalyzePdf:
         calls = []
         analyze_pdf(sample_pdf, 95.0, "", progress_callback=lambda p, m: calls.append((p, m)))
         assert len(calls) > 0
-        assert calls[0][0] == pytest.approx(0.0)
+        assert calls[0][0] == pytest.approx(1 / 3)
         assert calls[-1][0] == pytest.approx(1.0)
+        assert "immagini identificate" in calls[0][1]
+        assert "Pagina 1/3" in calls[0][1]
+
+    def test_progress_message_shows_running_count(self, multi_image_pdf: Path):
+        calls = []
+        result = analyze_pdf(
+            multi_image_pdf, 50.0, "", progress_callback=lambda p, m: calls.append(m)
+        )
+        counts = [
+            int(m.split("immagini identificate")[0].split()[-1])
+            for m in calls
+            if "immagini identificate" in m
+        ]
+        assert len(counts) == 4
+        assert counts == sorted(counts)
+        assert counts[-1] == len(result.candidates)
 
     def test_candidate_metadata(self, sample_pdf: Path):
         result = analyze_pdf(sample_pdf, 95.0, "", progress_callback=None)
@@ -211,6 +228,19 @@ class TestPreviewHelpers:
     def test_preview_shrinks_large_png_to_jpeg(self):
         out = preview_image(self._png(800, 600))
         assert out.startswith(b"\xff\xd8\xff")
+
+
+class TestFmtEta:
+    def test_sub_second(self):
+        assert _fmt_eta(0.4) == "<1s"
+
+    def test_seconds(self):
+        assert _fmt_eta(12.4) == "12s"
+        assert _fmt_eta(59.6) == "60s"
+
+    def test_minutes(self):
+        assert _fmt_eta(60) == "1m 0s"
+        assert _fmt_eta(95) == "1m 35s"
 
 
 # ---------------------------------------------------------------------------

@@ -12,6 +12,8 @@ from nicegui import ui
 from nicegui.elements.upload_files import SmallFileUpload
 from nicegui.testing import User
 
+from gui import AnalysisResult
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -268,9 +270,41 @@ class TestAnalyze:
         await _upload_pdf(user, sample_pdf)
         await _analyze(user)
         assert _refs()["progress_bar"].value == 1.0
+        assert _refs()["progress_pct"].text == "100%"
         assert _refs()["progress_label"].text == "Analisi completata"
         assert "hidden" not in _refs()["progress_bar"]._classes
         assert "hidden" in _refs()["spinner"]._classes
+
+    async def test_analyze_shows_live_image_count(self, user: User, sample_pdf: Path):
+        await user.open("/")
+        await _upload_pdf(user, sample_pdf)
+        real = _refs()["analyze_pdf"]
+
+        def slow_analyze(pdf_path, threshold, exclude, cb):
+            total = 5
+            for i in range(1, total + 1):
+                time.sleep(0.2)
+                if cb:
+                    cb(i / total, f"Pagina {i}/{total} - {i} immagini identificate")
+            return AnalysisResult(candidates=[], total_pages=total, doc_path=pdf_path)
+
+        _refs()["analyze_pdf"] = slow_analyze
+        try:
+            user.find("Analizza PDF").click()
+            await _wait_for(
+                lambda: "immagini identificate" in str(_refs()["progress_label"].text),
+                message="live image count never shown",
+            )
+            await _wait_for(
+                lambda: "ETA " in str(_refs()["progress_label"].text),
+                message="ETA never shown during analysis",
+            )
+            assert "hidden" not in _refs()["progress_bar"]._classes
+            pct = str(_refs()["progress_pct"].text)
+            assert pct.endswith("%") and pct[:-1].isdigit(), f"percentuale non intera: {pct}"
+            assert 0 < _refs()["progress_bar"].value < 1
+        finally:
+            _refs()["analyze_pdf"] = real
 
     async def test_analyze_with_exclude(self, user: User, sample_pdf: Path):
         await user.open("/")
@@ -428,6 +462,7 @@ class TestApply:
         await _analyze(user)
         await _apply(user)
         assert _refs()["progress_bar"].value == 1.0
+        assert _refs()["progress_pct"].text == "100%"
         assert _refs()["progress_label"].text == "Completato"
         assert "hidden" in _refs()["spinner"]._classes
 

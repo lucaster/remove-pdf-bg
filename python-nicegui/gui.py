@@ -9,10 +9,12 @@ Uso:
   python gui.py
 """
 
+import asyncio
 import base64
 import re
 import subprocess
 import sys
+import time
 import types
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -171,6 +173,16 @@ def pick_pdf_file(run=subprocess.run, python: Optional[str] = None) -> Optional[
     return Path(out) if out else None
 
 
+def _fmt_eta(seconds: float) -> str:
+    """Formatta un tempo stimato rimanente in modo leggibile."""
+    if seconds < 1:
+        return "<1s"
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    minutes, secs = divmod(int(round(seconds)), 60)
+    return f"{minutes}m {secs}s"
+
+
 def analyze_pdf(
     pdf_path: Path,
     threshold_pct: float,
@@ -190,8 +202,6 @@ def analyze_pdf(
                 protected.add(img[0])
 
         for i in range(n_pages):
-            if progress_callback:
-                progress_callback(i / n_pages, f"Analizzando pagina {i + 1}/{n_pages}...")
             if i in excluded:
                 continue
 
@@ -245,6 +255,12 @@ def analyze_pdf(
                         image_data=img_preview,
                         page_pixmap_data=page_preview,
                     )
+                )
+
+            if progress_callback:
+                progress_callback(
+                    (i + 1) / n_pages,
+                    f"Pagina {i + 1}/{n_pages} - {len(candidates)} immagini identificate",
                 )
 
         if progress_callback:
@@ -464,6 +480,7 @@ def main_page():
                 state.analyze_runs += 1
                 progress_bar.classes(remove="hidden")
                 progress_bar.value = 0
+                progress_pct.text = "0%"
                 progress_label.text = "Analisi in corso..."
                 spinner.classes(remove="hidden")
                 analyze_btn.disable()
@@ -472,10 +489,24 @@ def main_page():
                 state.candidates.clear()
                 state.analysis = None
 
+                progress = {"frac": 0.0, "msg": "Analisi in corso..."}
+
+                def _on_progress(frac: float, msg: str) -> None:
+                    progress["frac"] = frac
+                    progress["msg"] = msg
+
                 try:
-                    res = await run.io_bound(
-                        analyze_pdf, state.pdf_path, thresh, exclude, None
-                    )
+                    pump = _start_progress_pump(progress)
+                    try:
+                        res = await run.io_bound(
+                            _refs.get("analyze_pdf", analyze_pdf),
+                            state.pdf_path,
+                            thresh,
+                            exclude,
+                            _on_progress,
+                        )
+                    finally:
+                        pump.cancel()
                     state.analysis = res
                     state.candidates = res.candidates
 
@@ -501,6 +532,7 @@ def main_page():
                 finally:
                     spinner.classes(add="hidden")
                     progress_bar.value = 1.0
+                    progress_pct.text = "100%"
                     analyze_btn.enable()
 
             with ui.row().classes("items-center gap-4"):
@@ -510,8 +542,33 @@ def main_page():
                 analyze_btn.disable()
 
                 spinner = ui.spinner(type="dots", size="2rem").classes("hidden")
-                progress_bar = ui.linear_progress(value=0).classes("flex-grow hidden")
+                progress_bar = ui.linear_progress(
+                    value=0, show_value=False, size="20px"
+                ).classes("flex-grow hidden")
+                with progress_bar:
+                    progress_pct = ui.label("0%").classes(
+                        "absolute-center text-white"
+                    ).style("font-size: 0.875rem")
                 progress_label = ui.label("").classes("text-sm text-gray-600")
+
+            def _start_progress_pump(progress: dict) -> asyncio.Task:
+                """Aggiorna barra, percentuale ed ETA mentre il lavoro gira in un thread."""
+                start = time.monotonic()
+
+                async def _pump() -> None:
+                    while True:
+                        frac = progress["frac"]
+                        progress_bar.value = frac
+                        progress_pct.text = f"{round(frac * 100)}%"
+                        text = progress["msg"]
+                        if text and 0 < frac < 1:
+                            remaining = (time.monotonic() - start) * (1 - frac) / frac
+                            text += f" - ETA {_fmt_eta(remaining)}"
+                        if text:
+                            progress_label.text = text
+                        await asyncio.sleep(0.1)
+
+                return asyncio.create_task(_pump())
 
             ui.separator().classes("my-2")
 
@@ -629,16 +686,33 @@ def main_page():
 
                 progress_bar.classes(remove="hidden")
                 progress_bar.value = 0
+                progress_pct.text = "0%"
                 progress_label.text = "Elaborazione in corso..."
                 spinner.classes(remove="hidden")
                 apply_btn.disable()
                 analyze_btn.disable()
 
+                progress = {"frac": 0.0, "msg": "Elaborazione in corso..."}
+
+                def _on_progress(frac: float, msg: str) -> None:
+                    progress["frac"] = frac
+                    progress["msg"] = msg
+
                 try:
-                    removed = await run.io_bound(
-                        apply_removal, src, out, thresh, exclude, selected_map, None,
-                        dry_run=dry,
-                    )
+                    pump = _start_progress_pump(progress)
+                    try:
+                        removed = await run.io_bound(
+                            apply_removal,
+                            src,
+                            out,
+                            thresh,
+                            exclude,
+                            selected_map,
+                            _on_progress,
+                            dry_run=dry,
+                        )
+                    finally:
+                        pump.cancel()
                     prefix = "Dry-run completato" if dry else "Fatto! File salvato"
                     result_label.text = f"{prefix}: {out} ({removed} immagini)"
                     output_label.text = f"Output: {out.name}"
@@ -651,6 +725,7 @@ def main_page():
                 finally:
                     spinner.classes(add="hidden")
                     progress_bar.value = 1.0
+                    progress_pct.text = "100%"
                     analyze_btn.enable()
                     apply_btn.enable()
 
@@ -678,6 +753,7 @@ def main_page():
         handle_upload=handle_upload,
         handle_browse=handle_browse,
         pick_pdf_file=pick_pdf_file,
+        analyze_pdf=analyze_pdf,
         analyze=analyze,
         apply_removal_ui=apply_removal_ui,
         analyze_btn=analyze_btn,
@@ -690,6 +766,7 @@ def main_page():
         select_row=select_row,
         spinner=spinner,
         progress_bar=progress_bar,
+        progress_pct=progress_pct,
         progress_label=progress_label,
         file_label=file_label,
         output_label=output_label,

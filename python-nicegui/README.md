@@ -8,7 +8,7 @@ Interfaccia grafica cross-platform per la rimozione selettiva di immagini di sfo
 - **Selezione file nativa** ("Sfoglia dal disco"): il PDF di output viene salvato nella stessa cartella del file selezionato
 - **Anteprima PDF e immagini**: mostra thumbnail delle immagini candidate e contesto della pagina
 - **Selezione individuale** con checkbox per ogni immagine rilevata
-- **Progress bar** durante analisi ed elaborazione
+- **Progress bar** durante analisi ed elaborazione, con conteggio in tempo reale delle immagini identificate
 - **Dry-run** per testare senza modificare file
 - **Selezione massiva** (Seleziona tutto / Deseleziona tutto / Inverti)
 
