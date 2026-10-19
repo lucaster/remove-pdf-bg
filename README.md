@@ -30,7 +30,31 @@ java -jar java-cli/target/remove-pdf-bg.jar input.pdf -d            # dry-run
 java -jar java-cli/target/remove-pdf-bg.jar input.pdf -e 1,3 -t 90  # esclusioni/soglia
 ```
 
-## Eseguibile Windows autocontentuto (`-Pexe`)
+## TypeScript CLI
+
+Implementazione Node.js/TypeScript in `ts-cli/` (richiede Node.js 18+). Richiama l'interfaccia identica alle altre implementazioni.
+
+```bash
+cd ts-cli
+npm install
+npm run build  # -> dist/remove-pdf-bg.js
+node dist/remove-pdf-bg.js input.pdf -o pulito.pdf
+node dist/remove-pdf-bg.js input.pdf -d            # dry-run
+node dist/remove-pdf-bg.js input.pdf -e 1,3 -t 90  # esclusioni/soglia
+```
+
+## TypeScript CLI
+
+Implementazione Node.js/TypeScript in `ts-cli/` (richiede Node.js 18+). Richiama l'interfaccia identica alle altre implementazioni.
+
+```bash
+cd ts-cli
+npm install
+npm run build  # -> dist/remove-pdf-bg.js
+node dist/remove-pdf-bg.js input.pdf -o pulito.pdf
+node dist/remove-pdf-bg.js input.pdf -d            # dry-run
+node dist/remove-pdf-bg.js input.pdf -e 1,3 -t 90  # esclusioni/soglia
+```
 
 Genera un'app-image portatile con `jpackage`:
 
@@ -58,7 +82,7 @@ rendering pixel-per-pixel:
 ```bash
 python tests/compare.py test.pdf
 python tests/compare.py test.pdf --dry-run --strict-stdout
-python tests/compare.py test.pdf --exe java-cli/target/dist/remove-pdf-bg/remove-pdf-bg.exe
+python tests/compare.py test.pdf --js          # confronta la CLI TypeScript
 ```
 
 Requisiti Python: `pip install pymupdf` (numpy opzionale).

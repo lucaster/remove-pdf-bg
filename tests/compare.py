@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Confronta l'implementazione Java di remove-pdf-bg con il riferimento Python.
+Confronta un'implementazione di remove-pdf-bg con il riferimento Python.
 
 Per ogni PDF di input esegue entrambi i tool (stessi argomenti) e verifica:
   1. che il PDF prodotto sia identico pixel per pixel (renderizzato con PyMuPDF);
@@ -15,10 +15,13 @@ Uso tipico:
     python tests/compare.py test.pdf -e 2 -t 50 --dry-run
     python tests/compare.py test.pdf --keep          # conserva i PDF generati
     python tests/compare.py test.pdf --exe java-cli/target/dist/remove-pdf-bg/remove-pdf-bg.exe
+    python tests/compare.py test.pdf --js            # confronta la CLI TypeScript
 
 Prerequisiti:
     - il jar Java compilato in java-cli/target/remove-pdf-bg.jar
       (mvn -f java-cli/pom.xml package)
+    - la CLI TypeScript compilata in ts-cli/dist/remove-pdf-bg.js
+      (cd ts-cli && npm install && npm run build)
     - pymupdf  (pip install pymupdf)
     - numpy opzionale: se presente il report è più dettagliato.
 
@@ -51,6 +54,7 @@ except ImportError:
 REPO = Path(__file__).resolve().parent.parent
 PY_TOOL = REPO / "python-cli" / "remove-pdf-bg.py"
 JAR = REPO / "java-cli" / "target" / "remove-pdf-bg.jar"
+JS_TOOL = REPO / "ts-cli" / "dist" / "remove-pdf-bg.js"
 
 
 SUMMARY_PREFIXES = ("Immagini rimosse:", "Immagini individuate:")
@@ -164,24 +168,35 @@ def test_pdf(pdf: Path, args: argparse.Namespace, tmp: Path) -> bool:
         py_cmd += ["-o", str(py_out)]
     py_cmd += common
 
-    if args.exe:
+    if args.js:
+        js_cmd = ["node", str(JS_TOOL), str(pdf)]
+    elif args.exe:
         java_cmd = [str(args.exe), str(pdf)]
     else:
         java_cmd = ["java", "-jar", str(JAR), str(pdf)]
-    if java_out:
-        java_cmd += ["-o", str(java_out)]
-    java_cmd += common
+    if args.js:
+        if java_out:
+            js_cmd += ["-o", str(java_out)]
+        js_cmd += common
+    else:
+        if java_out:
+            java_cmd += ["-o", str(java_out)]
+        java_cmd += common
 
     print(f"\n=== {pdf.name} ===")
     rc_py, stdout_py = run(py_cmd, REPO)
-    rc_java, stdout_java = run(java_cmd, REPO)
+    if args.js:
+        rc_java, stdout_java = run(js_cmd, REPO)
+    else:
+        rc_java, stdout_java = run(java_cmd, REPO)
 
+    other = "JS" if args.js else "Java"
     ok = True
     if rc_py != 0:
         print(f"  [FAIL] Python exit={rc_py}")
         ok = False
     if rc_java != 0:
-        print(f"  [FAIL] Java exit={rc_java}")
+        print(f"  [FAIL] {other} exit={rc_java}")
         ok = False
 
     lyp, ljv = normalize(stdout_py), normalize(stdout_java)
@@ -198,17 +213,17 @@ def test_pdf(pdf: Path, args: argparse.Namespace, tmp: Path) -> bool:
         print(f"  [ OK ] messaggi per pagina identici ({len(body_py)} righe)")
     elif strict:
         print("  [FAIL] messaggi per pagina diversi:")
-        for line in _head(difflib.unified_diff(body_py, body_java, "python", "java", lineterm="")):
+        for line in _head(difflib.unified_diff(body_py, body_java, "python", other.lower(), lineterm="")):
             print("         " + line)
         ok = False
     else:
-        print("  [WARN] messaggi per pagina diversi (accounting PyMuPDF vs Java):")
-        for line in _head(difflib.unified_diff(body_py, body_java, "python", "java", lineterm="")):
+        print(f"  [WARN] messaggi per pagina diversi (accounting PyMuPDF vs {other}):")
+        for line in _head(difflib.unified_diff(body_py, body_java, "python", other.lower(), lineterm="")):
             print("         " + line)
 
     if summary_py != summary_java:
-        print("  [WARN] riepilogo diverso (quirk noto di PyMuPDF, non incide sul rendering):")
-        for line in _head(difflib.unified_diff(summary_py, summary_java, "python", "java", lineterm="")):
+        print(f"  [WARN] riepilogo diverso (quirk noto di PyMuPDF, non incide sul rendering):")
+        for line in _head(difflib.unified_diff(summary_py, summary_java, "python", other.lower(), lineterm="")):
             print("         " + line)
 
     if args.dry_run:
@@ -249,11 +264,17 @@ def main() -> int:
     ap.add_argument("--jar", type=Path, default=JAR)
     ap.add_argument("--exe", type=Path, default=None,
                     help="usa questo eseguibile (jpackage app-image) invece di java -jar")
+    ap.add_argument("--js", action="store_true",
+                    help="confronta la CLI TypeScript (node ts-cli/dist/remove-pdf-bg.js)")
     args = ap.parse_args()
 
     if args.jar != JAR:
         JAR = args.jar
-    if args.exe:
+    if args.js:
+        if not JS_TOOL.is_file():
+            sys.exit(f"CLI TypeScript non trovata: {JS_TOOL}\n"
+                     f"Compila prima con: cd ts-cli && npm install && npm run build")
+    elif args.exe:
         if not args.exe.is_file():
             sys.exit(f"Eseguibile non trovato: {args.exe}\n"
                      f"Compila prima con: mvn -f java-cli/pom.xml package -Pexe")
