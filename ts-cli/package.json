@@ -1,0 +1,20 @@
+{
+  "name": "remove-pdf-bg",
+  "version": "1.0.0",
+  "description": "Rimuove le immagini di sfondo a pagina intera da un PDF (implementazione TypeScript).",
+  "license": "MIT",
+  "bin": {
+    "remove-pdf-bg": "dist/remove-pdf-bg.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/remove-pdf-bg.js"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.0"
+  }
+}
