@@ -16,6 +16,7 @@ from gui import (
     get_image_name_on_page,
     parse_pages,
     pick_pdf_file,
+    pick_save_path,
     preview_image,
     visible_rect_size,
 )
@@ -272,6 +273,42 @@ class TestPickPdfFile:
             raise FileNotFoundError("no python")
 
         assert pick_pdf_file(run=boom) is None
+
+
+class TestPickSavePath:
+    class _Proc:
+        def __init__(self, stdout: str, returncode: int = 0):
+            self.stdout = stdout
+            self.returncode = returncode
+
+    def test_returns_chosen_path(self, tmp_path: Path):
+        target = tmp_path / "out.pdf"
+        result = pick_save_path(
+            "out.pdf", run=lambda cmd, **kw: self._Proc(f"{target}\r\n")
+        )
+        assert result == target
+
+    def test_passes_suggested_name(self, tmp_path: Path):
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen["cmd"] = cmd
+            return self._Proc("")
+
+        pick_save_path("documento_nobg.pdf", run=fake_run)
+        assert "documento_nobg.pdf" in seen["cmd"]
+
+    def test_cancelled_returns_none(self):
+        assert pick_save_path("out.pdf", run=lambda cmd, **kw: self._Proc("")) is None
+
+    def test_error_exit_returns_none(self):
+        assert pick_save_path("out.pdf", run=lambda cmd, **kw: self._Proc("", 1)) is None
+
+    def test_exception_returns_none(self):
+        def boom(cmd, **kw):
+            raise OSError("no python")
+
+        assert pick_save_path("out.pdf", run=boom) is None
 
 
 # ---------------------------------------------------------------------------

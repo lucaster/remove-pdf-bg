@@ -12,16 +12,18 @@ Uso:
 import asyncio
 import base64
 import re
+import shutil
 import subprocess
 import sys
 import time
 import types
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 import pymupdf as fitz
-from nicegui import app, events, run, ui
+from nicegui import app, context, events, run, ui
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +183,46 @@ def _fmt_eta(seconds: float) -> str:
         return f"{seconds:.0f}s"
     minutes, secs = divmod(int(round(seconds)), 60)
     return f"{minutes}m {secs}s"
+
+
+_SAVE_DIALOG_SCRIPT = (
+    "import sys, tkinter as tk\n"
+    "from tkinter import filedialog\n"
+    "sys.stdout.reconfigure(encoding='utf-8')\n"
+    "root = tk.Tk()\n"
+    "root.withdraw()\n"
+    "root.attributes('-topmost', True)\n"
+    "path = filedialog.asksaveasfilename(\n"
+    "    title='Salva il PDF',\n"
+    "    defaultextension='.pdf',\n"
+    "    initialfile=sys.argv[1],\n"
+    "    filetypes=[('PDF', '*.pdf'), ('Tutti i file', '*.*')],\n"
+    ")\n"
+    "sys.stdout.write(path or '')\n"
+)
+
+
+def pick_save_path(
+    suggested_name: str, run=subprocess.run, python: Optional[str] = None
+) -> Optional[Path]:
+    """Apre il dialogo nativo 'Salva come' e ritorna il percorso scelto.
+
+    Ritorna None se l'utente annulla o se il dialogo non è disponibile.
+    """
+    try:
+        proc = run(
+            [python or sys.executable, "-c", _SAVE_DIALOG_SCRIPT, suggested_name],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    out = (proc.stdout or "").strip()
+    return Path(out) if out else None
 
 
 def analyze_pdf(
@@ -370,6 +412,7 @@ class PageState:
     analysis: Optional[AnalysisResult] = None
     candidates: List[CandidateImage] = field(default_factory=list)
     output_path: Optional[Path] = None
+    saved_path: Optional[Path] = None
     analyze_runs: int = 0
 
 
@@ -661,6 +704,36 @@ def main_page():
         with ui.card().classes("w-full"):
             ui.label("4. Applica rimozione").classes("text-lg font-bold")
 
+            async def handle_download():
+                out = state.output_path
+                if out is None or not out.exists():
+                    ui.notify("Nessun file da scaricare", type="warning")
+                    return
+                url = app.add_static_file(local_file=out.resolve(), single_use=True)
+                context.client.on_delete(
+                    lambda: app.remove_route(urllib.parse.unquote(url))
+                )
+                ui.download.from_url(url, out.name)
+
+            async def handle_save_as():
+                out = state.output_path
+                if out is None or not out.exists():
+                    ui.notify("Nessun file da salvare", type="warning")
+                    return
+                picker = _refs.get("pick_save_path", pick_save_path)
+                dest = await run.io_bound(picker, out.name)
+                if dest is None:
+                    return
+                try:
+                    if dest.resolve() != out.resolve():
+                        shutil.copy2(out, dest)
+                except OSError as e:
+                    ui.notify(f"Errore durante il salvataggio: {e}", type="negative")
+                    return
+                state.saved_path = dest
+                output_label.text = f"Output: {dest.name} - {dest}"
+                ui.notify(f"File salvato in: {dest}", type="positive")
+
             async def apply_removal_ui():
                 if not state.pdf_path or not state.candidates:
                     ui.notify("Nessun candidato selezionato", type="warning")
@@ -718,6 +791,16 @@ def main_page():
                     output_label.text = f"Output: {out.name}"
                     ui.notify("Operazione completata", type="positive")
                     progress_label.text = "Completato"
+                    if not dry:
+                        save_row.clear()
+                        with save_row:
+                            ui.button(
+                                "Scarica PDF", icon="download", on_click=handle_download
+                            ).props("color=primary")
+                            ui.button(
+                                "Salva come...", icon="save", on_click=handle_save_as
+                            )
+                        save_row.classes(remove="hidden")
                 except Exception as e:
                     ui.notify(f"Errore: {e}", type="negative")
                     result_label.text = f"Errore: {e}"
@@ -729,12 +812,17 @@ def main_page():
                     analyze_btn.enable()
                     apply_btn.enable()
 
+                if not dry and state.output_path and state.output_path.exists():
+                    await handle_save_as()
+
             with ui.row().classes("items-center gap-4"):
                 apply_btn = ui.button(
                     "Rimuovi immagini selezionate", icon="delete", on_click=apply_removal_ui
                 ).props("color=negative")
                 apply_btn.disable()
                 output_label = ui.label("").classes("text-gray-600")
+
+            save_row = ui.row().classes("items-center gap-4 hidden")
 
             result_label = ui.label("").classes("mt-2")
 
@@ -748,10 +836,15 @@ def main_page():
         select_row.classes(add="hidden")
         apply_btn.disable()
 
+    # Il picker puo' essere sostituito dai test: setdefault non sovrascrive
+    _refs.setdefault("pick_save_path", pick_save_path)
+
     _refs.update(
         state=state,
         handle_upload=handle_upload,
         handle_browse=handle_browse,
+        handle_download=handle_download,
+        handle_save_as=handle_save_as,
         pick_pdf_file=pick_pdf_file,
         analyze_pdf=analyze_pdf,
         analyze=analyze,
@@ -771,6 +864,7 @@ def main_page():
         file_label=file_label,
         output_label=output_label,
         result_label=result_label,
+        save_row=save_row,
     )
 
 

@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import pymupdf
+import pytest
 from nicegui import ui
 from nicegui.elements.upload_files import SmallFileUpload
 from nicegui.testing import User
@@ -34,6 +35,13 @@ async def _wait_for(predicate, *, timeout: float = 10.0, message: str = "conditi
             return
         await asyncio.sleep(0.05)
     raise AssertionError(message)
+
+
+@pytest.fixture(autouse=True)
+def _no_native_save_dialog(user: User):
+    """Impedisce l'apertura del dialogo nativo 'Salva come' durante i test."""
+    _refs()["pick_save_path"] = lambda name: None
+    yield
 
 
 async def _upload_pdf(user: User, pdf_path: Path) -> None:
@@ -477,6 +485,53 @@ class TestApply:
         assert out is not None
         assert out.name.endswith("_nobg_preview.pdf")
         assert not out.exists()
+        assert "hidden" in _refs()["save_row"]._classes
+
+    async def test_apply_offers_download_and_save(self, user: User, sample_pdf: Path):
+        await user.open("/")
+        await _upload_pdf(user, sample_pdf)
+        await _analyze(user)
+        await _apply(user)
+        save_row = _refs()["save_row"]
+        labels = [b.text for b in save_row.descendants() if isinstance(b, ui.button)]
+        assert "Scarica PDF" in labels
+        assert "Salva come..." in labels
+        assert "hidden" not in save_row._classes
+
+    async def test_download_button_downloads_output(self, user: User, sample_pdf: Path):
+        await user.open("/")
+        await _upload_pdf(user, sample_pdf)
+        await _analyze(user)
+        await _apply(user)
+        user.find("Scarica PDF").click()
+        response = await user.download.next(timeout=5.0)
+        assert response.status_code == 200
+
+    async def test_save_as_copies_output_to_chosen_path(
+        self, user: User, sample_pdf: Path, tmp_path: Path
+    ):
+        await user.open("/")
+        dest = tmp_path / "scelto.pdf"
+        _refs()["pick_save_path"] = lambda name: dest
+        await _upload_pdf(user, sample_pdf)
+        await _analyze(user)
+        await _apply(user)
+        await _wait_for(lambda: _refs()["state"].saved_path is not None)
+        assert _refs()["state"].saved_path == dest
+        assert dest.exists()
+        assert dest.read_bytes() == _refs()["state"].output_path.read_bytes()
+
+    async def test_save_as_cancelled_keeps_output(
+        self, user: User, sample_pdf: Path, tmp_path: Path
+    ):
+        await user.open("/")
+        _refs()["pick_save_path"] = lambda name: None
+        await _upload_pdf(user, sample_pdf)
+        await _analyze(user)
+        await _apply(user)
+        await asyncio.sleep(0.2)
+        assert _refs()["state"].saved_path is None
+        assert _refs()["state"].output_path.exists()
 
     async def test_apply_with_deselected(self, user: User, sample_pdf: Path):
         await user.open("/")
