@@ -3,6 +3,7 @@ import {
   PDFDocument,
   PDFName,
   PDFNumber,
+  PDFObject,
   PDFRawStream,
   PDFStream,
 } from 'pdf-lib';
@@ -148,6 +149,10 @@ export async function analyzeDocument(
   const excluded = parsePages(excludeSpec, nPages);
   const xref = new XrefResolver(doc);
   const protectedXrefs = collectProtectedXrefs(doc, excluded, xref);
+  const objects = new Map<number, PDFObject>();
+  for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
+    objects.set(ref.objectNumber, obj);
+  }
 
   const candidates: CandidateImage[] = [];
 
@@ -163,6 +168,17 @@ export async function analyzeDocument(
     for (const [xrefId, entry] of scanner.getPlacements()) {
       const cov = coverage(entry.placement, rect) * 100;
       if (cov < thresholdPct) continue;
+
+      // Ignora lo stub 1x1 creato da replaceImageWithTransparent
+      const imgObj = objects.get(xrefId);
+      if (imgObj instanceof PDFRawStream) {
+        const wv = imgObj.dict.get(PDFName.of('Width'), false);
+        const hv = imgObj.dict.get(PDFName.of('Height'), false);
+        const wn = wv instanceof PDFNumber ? wv.asNumber() : null;
+        const hn = hv instanceof PDFNumber ? hv.asNumber() : null;
+        if (wn === 1 && hn === 1) continue;
+      }
+
       const name = pageNames.get(xrefId);
       candidates.push({
         pageIndex: i,
