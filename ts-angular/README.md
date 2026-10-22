@@ -47,7 +47,7 @@ di generazione delle anteprime viene eseguito davvero senza dipendenze native.
 
 Su GitHub, `.github/workflows/ci.yml` esegue unit test e E2E (in parallelo) su
 push e pull request che toccano `ts-angular/`; `.github/workflows/pages.yml`
-pubblica la build su GitHub Pages dopo i test unitari.
+pubblica la build su GitHub Pages solo se CI è verde, usando lo SHA testato.
 
 ## Comandi
 

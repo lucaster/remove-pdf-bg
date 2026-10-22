@@ -91,9 +91,11 @@ Il repository ha già il remote `lucaster/remove-pdf-bg`, quindi il sito sarebbe
 name: Deploy GUI to GitHub Pages
 
 on:
-  push:
+  # parte solo quando il workflow CI termina (lo script nel job verifica l'esito)
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    paths: ['ts-angular/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -103,22 +105,28 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ts-angular
     steps:
       - uses: actions/checkout@v4
+        with:
+          # il commit verificato da CI, non necessariamente la punta di main
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: ts-angular/package-lock.json
       - run: npm ci
-        working-directory: ts-angular
-      - run: npx ng build --base-href /remove-pdf-bg/
-        working-directory: ts-angular
+      - name: Build
+        run: npx ng build --base-href /remove-pdf-bg/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ts-angular/dist/ts-angular/browser
@@ -136,9 +144,11 @@ jobs:
 
 Con un dominio personalizzato alla radice, togliere `--base-href`.
 
-Il deploy è definito in `.github/workflows/pages.yml` (install → unit test →
-build → deploy); `.github/workflows/ci.yml` esegue unit test ed E2E in parallelo
-su push e pull request che toccano `ts-angular/`.
+Il deploy è concatenato a `.github/workflows/ci.yml` (unit test + E2E in
+parallelo): `pages.yml` parte solo quando CI è verde su `main` e pubblica
+esattamente lo SHA testato, senza ripetere i test. Per ripubblicare a mano
+(es. dopo aver modificato solo `pages.yml`) usare *Actions → Deploy GUI to
+GitHub Pages → Run workflow*.
 
 ## Firebase Hosting
 

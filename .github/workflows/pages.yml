@@ -1,11 +1,11 @@
 name: Deploy GUI to GitHub Pages
 
 on:
-  push:
+  # parte solo quando il workflow CI termina (lo script nel job verifica l'esito)
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'ts-angular/**'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -15,26 +15,27 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ts-angular
     steps:
       - uses: actions/checkout@v4
+        with:
+          # il commit verificato da CI, non necessariamente la punta di main
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: ts-angular/package-lock.json
-      - name: Install
-        working-directory: ts-angular
-        run: npm ci
-      - name: Unit tests
-        working-directory: ts-angular
-        run: npm run test:unit
+      - run: npm ci
       - name: Build
-        working-directory: ts-angular
         run: npx ng build --base-href /remove-pdf-bg/
       - uses: actions/upload-pages-artifact@v3
         with:
