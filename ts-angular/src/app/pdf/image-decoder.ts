@@ -53,6 +53,7 @@ const NAME_HEIGHT = PDFName.of('Height');
 const NAME_COLORSPACE = PDFName.of('ColorSpace');
 const NAME_BPC = PDFName.of('BitsPerComponent');
 const NAME_IMAGE_MASK = PDFName.of('ImageMask');
+const NAME_N = PDFName.of('N');
 
 function resolve(doc: PDFDocument, obj: PDFObject | undefined): PDFObject | undefined {
   if (obj === undefined) return undefined;
@@ -305,7 +306,12 @@ function parseColorSpace(doc: PDFDocument, obj: PDFObject | undefined): ColorSpa
     const family = items[0] instanceof PDFName ? items[0].decodeText() : '';
     switch (family) {
       case 'ICCBased': {
-        const n = asNumber(doc, items[1]);
+        // il secondo elemento e' il profilo (uno stream): i componenti sono in /N
+        let n = asNumber(doc, items[1]);
+        const profile = resolve(doc, items[1]);
+        if (n === null && profile instanceof PDFRawStream) {
+          n = asNumber(doc, profile.dict.get(NAME_N, false));
+        }
         if (n === 1) return { type: 'gray' };
         if (n === 3) return { type: 'rgb' };
         if (n === 4) return { type: 'cmyk' };

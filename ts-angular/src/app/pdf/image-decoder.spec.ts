@@ -173,6 +173,34 @@ describe('decodeImage', () => {
     expect([decoded!.data[4], decoded!.data[5], decoded!.data[6]]).toEqual([0, 255, 0]);
   });
 
+  it('decodifica un\'immagine ICCBased leggendo /N dal profilo', async () => {
+    const doc = await PDFDocument.create();
+    const profileDict = PDFDict.withContext(doc.context);
+    profileDict.set(PDFName.of('N'), PDFNumber.of(3));
+    const profile = PDFRawStream.of(profileDict, new Uint8Array(0));
+    const profileRef = doc.context.register(profile);
+
+    const dict = PDFDict.withContext(doc.context);
+    dict.set(PDFName.of('Type'), PDFName.of('XObject'));
+    dict.set(PDFName.of('Subtype'), PDFName.of('Image'));
+    dict.set(PDFName.of('Width'), PDFNumber.of(2));
+    dict.set(PDFName.of('Height'), PDFNumber.of(1));
+    dict.set(PDFName.of('BitsPerComponent'), PDFNumber.of(8));
+    const colorSpace = PDFArray.withContext(doc.context);
+    colorSpace.push(PDFName.of('ICCBased'));
+    colorSpace.push(profileRef);
+    dict.set(PDFName.of('ColorSpace'), colorSpace);
+
+    const stream = PDFRawStream.of(dict, Uint8Array.of(255, 0, 0, 0, 255, 0));
+    doc.context.register(stream);
+
+    const decoded = decodeImage(doc, stream);
+    expect(decoded!.kind).toBe('pixels');
+    if (decoded!.kind !== 'pixels') return;
+    expect([decoded!.data[0], decoded!.data[1], decoded!.data[2]]).toEqual([255, 0, 0]);
+    expect([decoded!.data[4], decoded!.data[5], decoded!.data[6]]).toEqual([0, 255, 0]);
+  });
+
   it('restituisce null per un formato non supportato', async () => {
     const doc = await PDFDocument.create();
     const stream = rawImage(
