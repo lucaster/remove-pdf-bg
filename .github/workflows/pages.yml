@@ -37,7 +37,7 @@ jobs:
       - run: npm ci
       - name: Build
         run: npx ng build --base-href /remove-pdf-bg/
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: ts-angular/dist/ts-angular/browser
 
