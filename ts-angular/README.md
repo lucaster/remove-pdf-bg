@@ -45,6 +45,10 @@ I test unitari girano su jsdom, che non implementa il canvas: `src/testing/setup
 fornisce un contesto 2D, `ImageData` e `createImageBitmap` finți, così il codice
 di generazione delle anteprime viene eseguito davvero senza dipendenze native.
 
+Su GitHub, `.github/workflows/ci.yml` esegue unit test e E2E (in parallelo) su
+push e pull request che toccano `ts-angular/`; `.github/workflows/pages.yml`
+pubblica la build su GitHub Pages dopo i test unitari.
+
 ## Comandi
 
 ```bash

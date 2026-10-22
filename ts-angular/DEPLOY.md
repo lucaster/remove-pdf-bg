@@ -136,6 +136,10 @@ jobs:
 
 Con un dominio personalizzato alla radice, togliere `--base-href`.
 
+Il deploy è definito in `.github/workflows/pages.yml` (install → unit test →
+build → deploy); `.github/workflows/ci.yml` esegue unit test ed E2E in parallelo
+su push e pull request che toccano `ts-angular/`.
+
 ## Firebase Hosting
 
 ```bash

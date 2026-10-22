@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ts-angular/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'ts-angular/**'
+      - '.github/workflows/ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unità e componenti
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ts-angular
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ts-angular/package-lock.json
+      - run: npm ci
+      - run: npm run test:unit
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ts-angular
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ts-angular/package-lock.json
+      - run: npm ci
+      - name: Cache browser Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('ts-angular/package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
+      - name: Installa Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Test end-to-end
+        run: npm run test:e2e
+      - name: Allega i risultati in caso di errore
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: ts-angular/test-results
+          if-no-files-found: ignore
+          retention-days: 7
