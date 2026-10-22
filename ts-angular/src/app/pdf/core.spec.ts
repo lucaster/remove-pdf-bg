@@ -152,6 +152,17 @@ describe('applyRemoval', () => {
     expect(withMask.length).toBe(2);
   });
 
+  it('ignora le immagini 1x1 prodotte da una precedente rimozione', async () => {
+    const bytes = await createFixturePdf({ pages: 1, background: true });
+    const doc = await load(bytes);
+    const { candidates } = await analyzeDocument(doc, 80, '');
+    await applyRemoval(doc, 80, '', new Map([[candidates[0].pageIndex, new Set([candidates[0].xref])]]), false);
+    const output = await saveDocument(doc);
+    const reloaded = await load(output);
+    const { candidates: after } = await analyzeDocument(reloaded, 80, '');
+    expect(after.length).toBe(0);
+  });
+
   it('in dry-run non modifica il documento', async () => {
     const bytes = await createFixturePdf({ pages: 1, background: true });
     const doc = await load(bytes);
