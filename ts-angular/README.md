@@ -48,10 +48,46 @@ di generazione delle anteprime viene eseguito davvero senza dipendenze native.
 ## Comandi
 
 ```bash
-npm run build       # build di produzione in dist/ts-angular
+npm run build       # build di produzione in dist/ts-angular/browser
+npm run preview     # serve la build come un host statico (http://localhost:8080)
 npm run watch       # build in modalità watch (sviluppo)
 npm start           # dev server
 ```
+
+## Pubblicare la build
+
+La build è **statica**: `dist/ts-angular/browser` contiene tutto il necessario
+(`index.html`, bundle JS/CSS e gli asset di pdf.js: worker, cmaps, font, wasm) e
+può essere pubblicata su qualsiasi host statico — Netlify, Cloudflare Pages,
+Vercel, GitHub Pages, nginx.
+
+Confronto dei piani gratuiti e istruzioni per ogni host: **[DEPLOY.md](DEPLOY.md)**.
+
+```bash
+npm run build
+npm run preview                    # prova locale: http://localhost:8080
+npm run preview -- --port 9000     # porta diversa
+npm run preview -- --host 0.0.0.0  # raggiungibile dagli altri dispositivi in rete
+```
+
+`npm run preview` usa `scripts/serve-dist.mjs`, un server statico senza
+dipendenze che imposta i MIME type corretti (in particolare `application/javascript`
+per i file `.mjs` del worker pdf.js) e fa fallback su `index.html`.
+
+Attenzioni:
+
+- **HTTPS**: la File System Access API funziona solo in un contesto sicuro.
+  `http://localhost` va bene; un indirizzo di rete locale in chiaro
+  (es. `http://192.168.1.10:8080`) **no** — in quel caso il pulsante
+  "Salva come..." viene nascosto e resta disponibile solo il download. Per provare
+  l'app da un telefono o da un dominio pubblico serve un tunnel HTTPS
+  (es. `cloudflared tunnel --url http://localhost:8080`).
+- **Sottopercorsi**: la build usa `<base href="/">`. Per pubblicarla in una
+  sottocartella (es. `https://utente.github.io/progetto/`) compilare con
+  `ng build --base-href /progetto/`.
+- Il server deve servire i file `.mjs` come `application/javascript`: con il
+  solo `python -m http.server` il worker pdf.js non si carica e le anteprime di
+  pagina restano vuote.
 
 ## Come funziona
 

@@ -97,5 +97,26 @@ npm run test:all
 
 Dettagli, struttura e compatibilità dei browser: `ts-angular/README.md`.
 
+### Build e pubblicazione
+
+```bash
+npm run build      # -> ts-angular/dist/ts-angular/browser
+npm run preview    # serve la build come un host statico, su http://localhost:8080
+```
+
+La build è **statica** (nessun backend) e si pubblica su qualsiasi host:
+Netlify, Cloudflare Pages, Vercel, GitHub Pages, nginx. Confronto dei piani
+gratuiti e istruzioni: **`ts-angular/DEPLOY.md`**. Tre avvertenze:
+
+1. **HTTPS** — la File System Access API (pulsante "Salva come...") funziona
+   solo in un contesto sicuro: `http://localhost` va bene, un IP di rete locale
+   in chiaro no (in quel caso il pulsante viene nascosto e resta il download).
+2. **Sottopercorsi** — la build usa `<base href="/">`: per pubblicarla in una
+   sottocartella (es. GitHub Pages) usare `ng build --base-href /nome-repo/`.
+3. **MIME type** — il server deve servire i file `.mjs` come
+   `application/javascript`, altrimenti il worker di pdf.js non si carica e le
+   anteprime di pagina restano vuote: non usare `python -m http.server`, usare
+   `npm run preview` o un host statico.
+
 La GUI NiceGUI equivalente (con server Python locale) si trova in
 `python-nicegui/`.
