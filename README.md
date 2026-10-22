@@ -111,8 +111,10 @@ gratuiti e istruzioni: **`ts-angular/DEPLOY.md`**. Tre avvertenze:
 1. **HTTPS** — la File System Access API (pulsante "Salva come...") funziona
    solo in un contesto sicuro: `http://localhost` va bene, un IP di rete locale
    in chiaro no (in quel caso il pulsante viene nascosto e resta il download).
-2. **Sottopercorsi** — la build usa `<base href="/">`: per pubblicarla in una
-   sottocartella (es. GitHub Pages) usare `ng build --base-href /nome-repo/`.
+2. **Sottopercorsi** — la build usa `<base href="/">` di default: per pubblicarla
+   in una sottocartella (es. GitHub Pages) usare
+   `ng build --base-href /nome-repo/`. Per la root di Cloudflare Pages basta
+   `ng build --base-href /` (o usare `build-cloudflare.sh`).
 3. **MIME type** — il server deve servire i file `.mjs` come
    `application/javascript`, altrimenti il worker di pdf.js non si carica e le
    anteprime di pagina restano vuote: non usare `python -m http.server`, usare
