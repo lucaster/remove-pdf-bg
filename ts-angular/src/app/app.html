@@ -1,0 +1,172 @@
+<header class="app-header">
+  <h1>Remove PDF Background - GUI (Angular)</h1>
+</header>
+
+<main class="app-main">
+  <section class="card">
+    <h2>1. Seleziona PDF</h2>
+    <div class="row">
+      <label
+        class="dropzone"
+        [class.dragover]="dragOver()"
+        (dragover)="onDragOver($event)"
+        (dragleave)="onDragLeave()"
+        (drop)="onDrop($event)"
+      >
+        <input
+          type="file"
+          accept="application/pdf,.pdf"
+          data-testid="file-input"
+          (change)="onFileSelected($event)"
+        />
+        <span>Trascina PDF qui o clicca per scegliere un file</span>
+      </label>
+      <span class="file-label" data-testid="file-label">{{ fileLabel() }}</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2. Opzioni</h2>
+    <div class="row options">
+      <label class="option">
+        <span>Soglia copertura (%)</span>
+        <input
+          type="range"
+          min="1"
+          max="100"
+          step="1"
+          [value]="session.threshold()"
+          data-testid="threshold-slider"
+          (input)="onThreshold($event)"
+        />
+        <span class="option-value" data-testid="threshold-value">{{ session.threshold() }}%</span>
+      </label>
+
+      <label class="option">
+        <span>Pagine escluse (es. 1,3,5-7,10-)</span>
+        <input
+          type="text"
+          placeholder="es. 1,3,5-7,10-"
+          [value]="session.exclude()"
+          data-testid="exclude-input"
+          (input)="onExclude($event)"
+        />
+      </label>
+
+      <label class="option checkbox">
+        <input
+          type="checkbox"
+          [checked]="session.dryRun()"
+          data-testid="dry-run-checkbox"
+          (change)="onDryRun($event)"
+        />
+        <span>Dry-run (solo preview, non scrive file)</span>
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3. Analizza e seleziona immagini da rimuovere</h2>
+    <div class="row">
+      <button
+        type="button"
+        class="primary"
+        data-testid="analyze-button"
+        [disabled]="!session.hasFile() || session.busy()"
+        (click)="analyze()"
+      >
+        Analizza PDF
+      </button>
+
+      @if (session.busy()) {
+        <span class="spinner" data-testid="spinner"></span>
+      }
+
+      <div class="progress" data-testid="progress-bar">
+        <div class="progress-track">
+          <div class="progress-fill" [style.width.%]="progressPercent()"></div>
+        </div>
+        <span class="progress-percent" data-testid="progress-percent">{{ progressPercent() }}%</span>
+      </div>
+
+      <span class="progress-label" data-testid="progress-label">{{ session.progress().message }}</span>
+    </div>
+
+    <p class="info" data-testid="info-label">{{ infoLabel() }}</p>
+
+    @if (session.candidates().length > 0) {
+      <div class="row">
+        <button type="button" data-testid="select-all" (click)="session.selectAll(true)">
+          Seleziona tutto
+        </button>
+        <button type="button" data-testid="select-none" (click)="session.selectAll(false)">
+          Deseleziona tutto
+        </button>
+        <button type="button" data-testid="invert-selection" (click)="session.invertSelection()">
+          Inverti selezione
+        </button>
+        <span class="counter" data-testid="selected-count">
+          {{ session.selectedCount() }} / {{ session.candidates().length }} selezionate
+        </span>
+      </div>
+
+      <div class="candidates">
+        @for (candidate of session.candidates(); track candidate.key) {
+          <app-candidate-card
+            [candidate]="candidate"
+            (selectionChange)="onSelectionChange($event)"
+          />
+        }
+      </div>
+    }
+  </section>
+
+  <section class="card">
+    <h2>4. Applica rimozione</h2>
+    <div class="row">
+      <button
+        type="button"
+        class="danger"
+        data-testid="apply-button"
+        [disabled]="session.candidates().length === 0 || session.busy()"
+        (click)="apply()"
+      >
+        Rimuovi immagini selezionate
+      </button>
+      <span class="output-label" data-testid="output-label">{{ outputLabel() }}</span>
+    </div>
+
+    @if (session.hasOutput()) {
+      <div class="row">
+        <button type="button" class="primary" data-testid="download-button" (click)="download()">
+          Scarica PDF
+        </button>
+        @if (saver.canSaveAs()) {
+          <button type="button" data-testid="save-as-button" (click)="saveAs()">Salva come...</button>
+        } @else {
+          <span class="info" data-testid="no-save-as-hint">
+            Questo browser non offre la finestra di dialogo "Salva come": il file viene scaricato
+            nella cartella di download.
+          </span>
+        }
+      </div>
+    }
+
+    <p class="result" data-testid="result-label">{{ resultLabel() }}</p>
+
+    @if (session.warnings().length > 0) {
+      <ul class="warnings" data-testid="warnings">
+        @for (warning of session.warnings(); track warning) {
+          <li>{{ warning }}</li>
+        }
+      </ul>
+    }
+  </section>
+
+  @if (session.error(); as error) {
+    <p class="error" data-testid="error-label">{{ error }}</p>
+  }
+  @if (notice(); as message) {
+    <p class="notice" data-testid="notice-label">{{ message }}</p>
+  }
+</main>

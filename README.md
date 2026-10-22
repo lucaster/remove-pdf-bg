@@ -73,3 +73,29 @@ node dist/remove-pdf-bg.js input.pdf -o pulito.pdf
 node dist/remove-pdf-bg.js input.pdf -d            # dry-run
 node dist/remove-pdf-bg.js input.pdf -e 1,3 -t 90  # esclusioni/soglia
 ```
+
+## GUI Angular (browser)
+
+Interfaccia web in `ts-angular/`: applicazione Angular (TypeScript) **senza
+backend**, che analizza il PDF nel browser, mostra le immagini di sfondo
+candidate con anteprima e permette di rimuoverle. Il file non viene mai
+caricato su un server.
+
+```bash
+cd ts-angular
+npm install
+npm start          # -> http://localhost:4200
+```
+
+Test su tre livelli (unità, componenti Angular, end-to-end con Playwright):
+
+```bash
+npm run test:unit  # vitest + Angular TestBed
+npm run test:e2e   # Playwright in Chromium
+npm run test:all
+```
+
+Dettagli, struttura e compatibilità dei browser: `ts-angular/README.md`.
+
+La GUI NiceGUI equivalente (con server Python locale) si trova in
+`python-nicegui/`.
