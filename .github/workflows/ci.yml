@@ -63,7 +63,7 @@ jobs:
         run: npm run test:e2e
       - name: Allega i risultati in caso di errore
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-results
           path: ts-angular/test-results
