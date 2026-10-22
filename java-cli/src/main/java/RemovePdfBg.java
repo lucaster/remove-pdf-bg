@@ -324,6 +324,14 @@ public final class RemovePdfBg {
                     if (cov < threshold) {
                         continue;
                     }
+                    // Ignora lo stub 1x1 creato da una precedente rimozione
+                    try {
+                        PDImageXObject imgObj = entry.getValue().image();
+                        if (imgObj.getWidth() == 1 && imgObj.getHeight() == 1) {
+                            continue;
+                        }
+                    } catch (Exception ignored) {
+                    }
                     if (!dryRun) {
                         if (protectedXrefs.contains(xref)) {
                             String name = pageNames.get(xref);

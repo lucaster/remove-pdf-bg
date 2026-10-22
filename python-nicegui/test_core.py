@@ -385,3 +385,82 @@ class TestApplyRemoval:
         apply_removal(sample_pdf, out, 95.0, "", sel, progress_callback=lambda p, m: calls.append(p))
         assert len(calls) > 0
         assert calls[-1] == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# Regression: PDF already processed (no 1x1 stubs)
+# ---------------------------------------------------------------------------
+
+
+class TestAlreadyProcessedPdf:
+    def test_analyze_after_removal_finds_nothing(self, sample_pdf: Path, tmp_path: Path):
+        """Riaprire un PDF già processato non deve trovare nuove candidati."""
+        out = tmp_path / "processed.pdf"
+        result = analyze_pdf(sample_pdf, 95.0, "", progress_callback=None)
+        sel = {}
+        for c in result.candidates:
+            sel.setdefault(c.page_idx, set()).add(c.xref)
+        apply_removal(sample_pdf, out, 95.0, "", sel, progress_callback=None)
+        # Re-analyze
+        result2 = analyze_pdf(out, 95.0, "", progress_callback=None)
+        assert len(result2.candidates) == 0
+
+    def test_analyze_after_removal_images_removed_from_content(self, sample_pdf: Path, tmp_path: Path):
+        out = tmp_path / "processed.pdf"
+        result = analyze_pdf(sample_pdf, 95.0, "", progress_callback=None)
+        sel = {}
+        for c in result.candidates:
+            sel.setdefault(c.page_idx, set()).add(c.xref)
+        apply_removal(sample_pdf, out, 95.0, "", sel, progress_callback=None)
+        import pymupdf as fitz
+        with fitz.open(out) as d:
+            for page in d:
+                infos = page.get_image_info(xrefs=True)
+                for inf in infos:
+                    # Solo stub 1x1 eventualmente lasciati, mai immagini originali grandi
+                    assert inf.get('width', 0) <= 1 and inf.get('height', 0) <= 1
+
+
+# ---------------------------------------------------------------------------
+# Regression: Python CLI non usa stub 1x1
+# ---------------------------------------------------------------------------
+
+
+class TestPythonCliNoStubs:
+    def test_cli_reprocess_no_images_found(self, tmp_path: Path):
+        """Il CLI Python non lascia stub 1x1, quindi una seconda analisi non trova nulla."""
+        import fitz
+        import subprocess
+        import sys
+
+        src = tmp_path / "in.pdf"
+        doc = fitz.open()
+        pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 200, 200))
+        pix.clear_with(180)
+        img_bytes = pix.tobytes("png")
+        for i in range(2):
+            p = doc.new_page(width=595, height=842)
+            p.insert_image(p.rect, stream=img_bytes)
+            p.insert_text((72, 72), f"Page {i + 1}")
+        doc.save(src)
+        doc.close()
+
+        out1 = tmp_path / "out1.pdf"
+        res = subprocess.run(
+            [sys.executable, str(Path(__file__).parent.parent / "python-cli" / "remove-pdf-bg.py"),
+             str(src), "-o", str(out1)],
+            capture_output=True,
+            text=True,
+        )
+        assert res.returncode == 0
+
+        out2 = tmp_path / "out2.pdf"
+        res2 = subprocess.run(
+            [sys.executable, str(Path(__file__).parent.parent / "python-cli" / "remove-pdf-bg.py"),
+             str(out1), "-o", str(out2)],
+            capture_output=True,
+            text=True,
+        )
+        assert res2.returncode == 0
+        # Se non lascia stub, la seconda esecuzione non dovrebbe rimuovere nulla
+        assert "Immagini rimosse: 0" in res2.stdout

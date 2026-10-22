@@ -122,6 +122,10 @@ def remove_backgrounds(src, dst, threshold, excluded, dry_run=False):
                 continue
             seen_on_page.add(xref)
 
+            # Ignora lo stub 1x1 lasciato da una precedente rimozione
+            if info.get("width") == 1 and info.get("height") == 1:
+                continue
+
             cov = coverage(info["bbox"], prect)
             if cov < threshold:
                 continue

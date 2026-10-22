@@ -273,6 +273,13 @@ def analyze_pdf(
                 if cov < threshold_pct:
                     continue
 
+                # Ignora lo stub 1x1 lasciato da una precedente rimozione
+                try:
+                    if info.get("width") == 1 and info.get("height") == 1:
+                        continue
+                except Exception:
+                    pass
+
                 can_strip, name = can_strip_image_from_page(page, xref)
                 is_prot = xref in protected
 
