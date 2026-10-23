@@ -227,3 +227,6 @@ node_modules/
 # AI/agent tooling dirs
 .opencode/
 .specify/
+
+# Cloudflare Pages Wrangler
+.wrangler/
