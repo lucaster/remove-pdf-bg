@@ -163,20 +163,3 @@ e2e/                   scenari Playwright
 - Il formato del file di output è quello di `pdf-lib`: i PDF non sono
   byte-identici a quelli prodotti dalle altre implementazioni, ma il rendering
   è identico.
-
-
-## Pubblicare in Cloudflare Pages
-
-```bat
-REM 1) Build per Cloudflare Pages
-ts-angular-build-cloudflare.bat
-
-REM 2) Login (se non già fatto)
-npx wrangler login
-
-REM 3) Crea il progetto Pages
-npx wrangler pages project create remove-pdf-bg --production-branch=main
-
-REM 4) Deploy
-npx wrangler pages deploy ts-angular/dist/ts-angular/browser --project-name=remove-pdf-bg
-```

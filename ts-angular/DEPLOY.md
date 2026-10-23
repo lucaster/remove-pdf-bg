@@ -55,7 +55,9 @@ Via CLI (senza Git):
 
 ```bash
 npm run build
-npx wrangler pages deploy dist/ts-angular/browser --project-name remove-pdf-bg
+npx wrangler login
+npx wrangler pages project create remove-pdf-bg --production-branch=main
+npx wrangler pages deploy dist/ts-angular/browser --project-name=remove-pdf-bg
 ```
 
 Via dashboard con repository Git: *Workers & Pages → Create → Pages → Connect to

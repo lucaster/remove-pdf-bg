@@ -1,6 +1,11 @@
 @echo off
-set MSYS_NO_PATHCONV=1
-cd /d "%~dp0ts-angular"
+setlocal
+
+pushd "%~dp0ts-angular"
+if exist dist rmdir /s /q dist
 call npm ci
-call npx ng build --configuration production --base-href /
+call ng build --configuration production --base-href /
 if exist public\_redirects copy public\_redirects dist\ts-angular\browser\_redirects >nul
+popd
+
+endlocal
